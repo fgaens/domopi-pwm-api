@@ -1,0 +1,50 @@
+name: Maven Verify
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'oracle'
+          java-version: '25'
+          cache: 'maven'
+
+      - name: Build service module
+        run: cd service && mvn clean package -DskipTests
+
+      - name: Start service in background
+        run: |
+          cd service
+          java -jar target/quarkus-app/quarkus-run.jar &
+          echo $! > service.pid
+
+      - name: Wait for service to be ready
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:8080/q/health/ready; do sleep 2; done' || exit 1
+
+      - name: Run service tests
+        run: cd service && mvn test
+
+      - name: Run system tests
+        run: cd service-st && mvn verify
+
+      - name: Stop service
+        if: always()
+        run: |
+          if [ -f service/service.pid ]; then
+            kill $(cat service/service.pid) || true
+          fi
