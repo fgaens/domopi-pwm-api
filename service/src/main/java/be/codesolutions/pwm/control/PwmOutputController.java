@@ -29,6 +29,7 @@ public class PwmOutputController {
     static final System.Logger LOG = System.getLogger(PwmOutputController.class.getName());
     private static final int PWM_FREQUENCY = 1500;
 
+    private final boolean enableHardware;
     private final Map<String, Integer> outputPins;
     private final Map<String, PwmOutput> outputs;
     private final Map<String, Pwm> pwmDevices;
@@ -39,8 +40,10 @@ public class PwmOutputController {
             @ConfigProperty(name = "pwm.outputs.mb.pin") int mbPin,
             @ConfigProperty(name = "pwm.outputs.lk.pin") int lkPin,
             @ConfigProperty(name = "pwm.outputs.kk.pin") int kkPin,
-            @ConfigProperty(name = "pwm.outputs.bk.pin") int bkPin) {
+            @ConfigProperty(name = "pwm.outputs.bk.pin") int bkPin,
+            @ConfigProperty(name = "pwm.hardware.enabled", defaultValue = "true") boolean enableHardware) {
 
+        this.enableHardware = enableHardware;
         this.outputPins = Map.of(
                 "zk", zkPin,
                 "mb", mbPin,
@@ -54,7 +57,21 @@ public class PwmOutputController {
 
     @PostConstruct
     void initialize() {
-        LOG.log(INFO, "Initializing PWM output controller");
+        LOG.log(INFO, "Initializing PWM output controller (hardware enabled: {0})", enableHardware);
+
+        // Always initialize the outputs map (needed for business logic)
+        for (Map.Entry<String, Integer> entry : outputPins.entrySet()) {
+            String id = entry.getKey();
+            int pin = entry.getValue();
+            PwmOutput output = new PwmOutput(id, pin);
+            outputs.put(id, output);
+        }
+
+        // Only initialize Pi4J hardware if enabled
+        if (!enableHardware) {
+            LOG.log(INFO, "Hardware disabled - running in test mode");
+            return;
+        }
 
         try {
             this.pi4j = Pi4J.newAutoContext();
@@ -62,9 +79,6 @@ public class PwmOutputController {
             for (Map.Entry<String, Integer> entry : outputPins.entrySet()) {
                 String id = entry.getKey();
                 int pin = entry.getValue();
-
-                PwmOutput output = new PwmOutput(id, pin);
-                outputs.put(id, output);
 
                 PwmConfig config = Pwm.newConfigBuilder(pi4j)
                         .id(id)
@@ -125,12 +139,15 @@ public class PwmOutputController {
         PwmOutput updatedOutput = output.withValue(value);
         outputs.put(id, updatedOutput);
 
-        Pwm pwm = pwmDevices.get(id);
-        if (pwm != null) {
-            // Convert 0.0-1.0 to duty cycle percentage (0-100)
-            float dutyCycle = (float) (value * 100.0);
-            pwm.on(dutyCycle);
-            LOG.log(INFO, "Set PWM output {0} to {1} (duty cycle: {2}%)", id, value, dutyCycle);
+        // Only interact with hardware if enabled
+        if (enableHardware) {
+            Pwm pwm = pwmDevices.get(id);
+            if (pwm != null) {
+                // Convert 0.0-1.0 to duty cycle percentage (0-100)
+                float dutyCycle = (float) (value * 100.0);
+                pwm.on(dutyCycle);
+                LOG.log(INFO, "Set PWM output {0} to {1} (duty cycle: {2}%)", id, value, dutyCycle);
+            }
         }
 
         return updatedOutput;
