@@ -14,7 +14,7 @@
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
         <quarkus.platform.version>3.28.4</quarkus.platform.version>
         <pi4j.version>3.0.2</pi4j.version>
-        <mockito.version>5.14.2</pi4j.version>
+        <mockito.version>5.14.2</mockito.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.5.4</surefire-plugin.version>
     </properties>
