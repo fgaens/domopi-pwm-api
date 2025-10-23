@@ -15,12 +15,4 @@ public record PwmOutput(String id, int pin, double value) {
             throw new IllegalArgumentException("PWM value must be between 0.0 and 1.0, got: " + value);
         }
     }
-
-    public PwmOutput(String id, int pin) {
-        this(id, pin, 0.0);
-    }
-
-    public PwmOutput withValue(double newValue) {
-        return new PwmOutput(id, pin, newValue);
-    }
 }
