@@ -9,7 +9,8 @@ on:
       - main
 
 jobs:
-  verify:
+  build-and-test:
+    name: Build and Integration Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -49,6 +50,14 @@ jobs:
             kill $(cat service/service.pid) || true
           fi
 
+      - name: Upload service artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarkus-app
+          path: service/target/quarkus-app/
+          retention-days: 1
+
       - name: Send Discord notification
         if: always()
         uses: sarisia/actions-status-discord@v1
@@ -56,6 +65,55 @@ jobs:
           webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
           status: ${{ job.status }}
           title: "${{ github.repository }} Build"
+          description: |
+            **Branch:** ${{ github.ref_name }}
+            **Commit:** ${{ github.event.head_commit.message }}
+            **Author:** ${{ github.event.head_commit.author.name }}
+          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  hardware-test:
+    name: Hardware Tests on Raspberry Pi
+    runs-on: [self-hosted, linux, ARM64]
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download service artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: quarkus-app
+          path: service/target/quarkus-app/
+
+      - name: Start service in background
+        run: |
+          cd service
+          java -jar target/quarkus-app/quarkus-run.jar &
+          echo $! > service.pid
+
+      - name: Wait for service to be ready
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:8080/q/health/ready; do sleep 2; done' || exit 1
+
+      - name: Run hardware system tests
+        run: cd service-st && mvn clean test-compile failsafe:integration-test -Dpwm.system-test.enabled=true
+
+      - name: Stop service
+        if: always()
+        run: |
+          if [ -f service/service.pid ]; then
+            kill $(cat service/service.pid) || true
+          fi
+
+      - name: Send Discord notification
+        if: always()
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: ${{ job.status }}
+          title: "${{ github.repository }} Hardware Tests"
           description: |
             **Branch:** ${{ github.ref_name }}
             **Commit:** ${{ github.event.head_commit.message }}
